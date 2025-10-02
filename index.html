@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dodge the Blocks - V2 Retro</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #111;
+      font-family: "Courier New", monospace;
+      height: 100vh;
+      justify-content: center;
+    }
+    canvas {
+      image-rendering: pixelated;
+      background: #222;
+      border: 4px solid #44ff44;
+      box-shadow: 0 0 15px #44ff44;
+    }
+    #controls {
+      margin-top: 15px;
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+    }
+    .btn {
+      width: 70px;
+      height: 70px;
+      font-size: 24px;
+      border: 3px solid #44ff44;
+      background: #111;
+      color: #44ff44;
+      font-family: "Courier New", monospace;
+    }
+    .btn:active {
+      background: #44ff44;
+      color: #111;
+    }
+    #restartBtn {
+      margin-top: 12px;
+      padding: 8px 20px;
+      font-size: 18px;
+      border: 3px solid #ff4444;
+      background: #111;
+      color: #ff4444;
+      font-family: "Courier New", monospace;
+      display: none;
+    }
+    #restartBtn:active {
+      background: #ff4444;
+      color: #111;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="400" height="600"></canvas>
+  <div id="controls">
+    <button class="btn" id="leftBtn">◀</button>
+    <button class="btn" id="rightBtn">▶</button>
+  </div>
+  <button id="restartBtn">RESTART</button>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const restartBtn = document.getElementById("restartBtn");
+
+// Sounds (simple retro beep using Web Audio API)
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playBeep(freq, duration) {
+  let osc = audioCtx.createOscillator();
+  let gain = audioCtx.createGain();
+  osc.frequency.value = freq;
+  osc.type = "square";
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+let player, enemies, score, highScore, gameOver, moveLeft, moveRight, explosionParticles;
+
+function resetGame() {
+  player = { x: 175, y: 540, w: 40, h: 40, speed: 6 };
+  enemies = [];
+  for (let i = 0; i < 6; i++) enemies.push(makeEnemy());
+  score = 0;
+  highScore = localStorage.getItem("highScore") || 0;
+  gameOver = false;
+  explosionParticles = [];
+  restartBtn.style.display = "none";
+}
+
+function makeEnemy() {
+  return { x: Math.random() * 360, y: -50, w: 40, h: 40, speed: 2 + Math.random()*3 };
+}
+
+function createExplosion(x, y) {
+  explosionParticles = [];
+  for (let i = 0; i < 30; i++) {
+    explosionParticles.push({
+      x: x, y: y,
+      dx: (Math.random() - 0.5) * 6,
+      dy: (Math.random() - 0.5) * 6,
+      size: 6,
+      life: 30
+    });
+  }
+}
+
+function update() {
+  if (gameOver) {
+    explosionParticles.forEach(p => {
+      p.x += p.dx;
+      p.y += p.dy;
+      p.life--;
+    });
+    explosionParticles = explosionParticles.filter(p => p.life > 0);
+    return;
+  }
+
+  if (moveLeft && player.x > 0) player.x -= player.speed;
+  if (moveRight && player.x + player.w < canvas.width) player.x += player.speed;
+
+  enemies.forEach(enemy => {
+    enemy.y += enemy.speed;
+    if (enemy.y > canvas.height) {
+      enemy.y = -40;
+      enemy.x = Math.random() * 360;
+      score++;
+      playBeep(600, 0.1);
+    }
+
+    if (player.x < enemy.x + enemy.w &&
+        player.x + player.w > enemy.x &&
+        player.y < enemy.y + enemy.h &&
+        player.y + player.h > enemy.y) {
+      gameOver = true;
+      createExplosion(player.x + player.w/2, player.y + player.h/2);
+      playBeep(120, 0.3);
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem("highScore", highScore);
+      }
+      restartBtn.style.display = "block";
+    }
+  });
+}
+
+function drawPixelRect(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Player (green block)
+  if (!gameOver) drawPixelRect(player.x, player.y, player.w, player.h, "#44ff44");
+
+  // Enemies (red blocks)
+  enemies.forEach(enemy => drawPixelRect(enemy.x, enemy.y, enemy.w, enemy.h, "#ff4444"));
+
+  // Explosion
+  explosionParticles.forEach(p => {
+    ctx.fillStyle = "#44ff44";
+    ctx.fillRect(p.x, p.y, p.size, p.size);
+  });
+
+  // Score
+  ctx.fillStyle = "#44ff44";
+  ctx.font = "20px Courier New";
+  ctx.fillText("SCORE " + score, 10, 25);
+  ctx.fillText("HIGH " + highScore, 10, 50);
+
+  if (gameOver && explosionParticles.length === 0) {
+    ctx.fillStyle = "#ff4444";
+    ctx.font = "30px Courier New";
+    ctx.fillText("= GAME OVER =", 100, 280);
+    ctx.font = "18px Courier New";
+    ctx.fillText("PRESS RESTART", 120, 320);
+  }
+}
+
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// Kontrol
+moveLeft = moveRight = false;
+document.getElementById("leftBtn").addEventListener("touchstart", ()=> moveLeft = true);
+document.getElementById("leftBtn").addEventListener("touchend", ()=> moveLeft = false);
+document.getElementById("rightBtn").addEventListener("touchstart", ()=> moveRight = true);
+document.getElementById("rightBtn").addEventListener("touchend", ()=> moveRight = false);
+
+// Restart
+restartBtn.addEventListener("click", resetGame);
+
+// Start
+resetGame();
+gameLoop();
+</script>
+</body>
+  </html>
